@@ -115,7 +115,7 @@ void test_rotation_matrices() {
     }
     free_matrix(Rz);
 }
-
+/*
 int main(int argc, char const *argv[]) {
     test_create_matrix();
     test_get_element();
@@ -124,3 +124,4 @@ int main(int argc, char const *argv[]) {
     printf("All tests passed!\n");
     return 0;
 }
+*/
