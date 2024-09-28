@@ -10,94 +10,101 @@ Written By Max Chivers.
 /* Implementations */
 
 /* ------------------------------------------------------------------------ */
-/*NOTE ALL TORUS POINTS ARE BASED ON ROTATION AROUND Y AXIS */
-double torus_x(double theta, double phi) {
-    return (R2 + R1 * cos(theta)) * cos(phi);
+/* Finding the inital cross sectional circle  */
+double circle_x(double theta) {
+    return (R2 + R1 * cos(theta));
 }
 
-double torus_y(double theta, double phi) {
+double circle_y(double theta) {
     return R1 * sin(theta);
 }
 
-double torus_z(double theta, double phi) {
-    return -(R2 + R1 * cos(theta)) * sin(phi);
-}
 /* ------------------------------------------------------------------------ */
 
-matrix_t* torus_point(double x, double y, double z) {
-    double coords[3] = {x, y, z};
-    return arr_2_matrix(coords, 3, 1);
-}
-
-matrix_t* torus_point_after_rotation(matrix_t* torus_point, double a, double b) {
-    /* Rotates around x-axis by a and z-axis by b */
+/* Function to get rotated coords of a point on torus based on the cross-sectional circle, 
+phi (angle to rotate around axis of revolution), A rotation around axis X, and B rotation around axis B 
+returning the new coordinates
+Note yxz is order of rotational angles */
+double* rotate_circle_yxz(double circle_x, double circle_y, double phi, double A, double B) {
+    // Precompute sine and cosine of angles for efficiency
+    double cosA = cos(A), sinA = sin(A);
+    double cosB = cos(B), sinB = sin(B);
+    double cosphi = cos(phi), sinphi = sin(phi);
     
-    // Create rotation matrices
-    matrix_t* Rx = Rx_3d(a);  // Rotation matrix around x-axis
-    matrix_t* Rz = Rz_3d(b);  // Rotation matrix around z-axis
-
-    // Multiply the matrices
-    matrix_t* rotated_x = multiply_matrix(Rx, torus_point);
-    matrix_t* rotated_result = multiply_matrix(Rz, rotated_x);
-
-    // Free the intermediate rotation matrix
-    free(Rx);
-    free(rotated_x);
-    free(Rz);
-
-    return rotated_result; // Return the final rotated matrix
+    // Allocate memory for the rotated coordinates (3 doubles)
+    double* rotated_coords = (double*)malloc(3 * sizeof(double));
+ 
+    // Apply the rotation formulas for x, y, and z coordinates
+    rotated_coords[0] = circle_x * (cosB * cosphi + sinA * sinB * sinphi) - circle_y * cosA * sinB;
+    rotated_coords[1] = circle_x * (sinB * cosphi - sinA * cosB * sinphi) + circle_y * cosA * cosB;
+    rotated_coords[2] = cosA * circle_x * sinphi + circle_y * sinA;
+    
+    return rotated_coords;
 }
 
 void display_torus_animation() {
-    float A = 0, B = 0;
-    float i, j;
+    int screen_width = 80; 
+    int screen_height = 24;
+    // Calculate respective K1
+    // const double aspect_ratio = screen_width/(double)screen_height;
+    double K1x = screen_width/2;
+    double K1y = screen_height/2;
+
+    double A = 0, B = 0;  // Rotational Angles along two axes
+    double theta, phi;
     int k;
-    float z[1760];
-    char b[1760];
+    double zbuffer[screen_height * screen_width];  // Z buffer of 1D array representing the entire screen
+    char output_buffer[screen_height * screen_width];  // The output we first place in before printing it
 
-    printf("\x1b[2J");
     for (;;) {
-        memset(b, 32, 1760);
-        memset(z, 0, 7040);
+        memset(output_buffer, 32, screen_height * screen_width);  // Fill the ASCII buffer with spaces (' ' = 32 in ASCII)
+        memset(zbuffer, 0.0, screen_height * screen_width * sizeof(double));   // Fill the depth buffer 'z' with zeros
 
-        for (j = 0; j < 6.28; j += 0.07) {
-            for (i = 0; i < 6.28; i += 0.02) {
-                // Calculate the torus point in 3D
-                double x_coord = torus_x(i, j);
-                double y_coord = torus_y(i, j);
-                double z_coord = torus_z(i, j);
+        for (theta = 0; theta < 6.28; theta += 0.07) {
+            for (phi = 0; phi < 6.28; phi += 0.02) {
+  
+                double circlex = circle_x(theta);
+                double circley = circle_y(theta);
 
-                // Convert to a matrix representation
-                matrix_t* point = torus_point(x_coord, y_coord, z_coord);
-                
-                // Rotate the point
-                matrix_t* rotated_point = torus_point_after_rotation(point, A, B);
-                
-                // Extract the rotated coordinates
-                double rotated_x = rotated_point->data[0];  // Accessing the x coordinate
-                double rotated_y = rotated_point->data[1];  // Accessing the y coordinate
-                double D = 1 / (rotated_x * 0.5 + rotated_y * 0.5 + K2);  // Simplified distance calculation
-                int x_proj = (int)(40 + 30 * D * (rotated_x));
-                int y_proj = (int)(12 + 15 * D * (rotated_y));
+                double* rotated_coords = rotate_circle_yxz(circlex, circley, phi, A, B);
 
-                // Use shading for ASCII representation
-                int o = x_proj + 80 * y_proj;
-                int N = 8 * ((rotated_y) * (0.5) - rotated_x);
-                
-                if (22 > y_proj && y_proj > 0 && x_proj > 0 && 80 > x_proj && D > z[o]) {
-                    z[o] = D;
-                    b[o] = ".,-~:;=!*#$@"[N > 0 ? N : 0];
-                }
+                // Save the 3D coords of the torus
+                double x = rotated_coords[0];
+                double y = rotated_coords[1];
+                double z = rotated_coords[2];
 
-                // Clean up the rotated point matrix
-                free(point);
-                free(rotated_point);
+                double ooz = 1 / (K2 + z);  // "one over z"
+
+                // x and y projection.  note that y is negated here, because y
+                // goes up in 3D space but down on 2D displays.
+                int x_proj = (int)((screen_width/2 + K1x*ooz*x));
+                int y_proj = (int)((screen_height/2 - K1y*ooz*y));
+
+                // Clamp the projection to be on screen
+                x_proj = (x_proj < 0) ? 0 : (x_proj >= screen_width ? screen_width - 1 : x_proj);
+                y_proj = (y_proj < 0) ? 0 : (y_proj >= screen_height ? screen_height - 1 : y_proj);
+
+                // calculate luminance.  ugly, but correct. (based on normal surface against direction of light)
+                    // L ranges from -sqrt(2) to +sqrt(2).  If it's < 0, the surface
+                    // is pointing away from us, so we won't bother trying to plot it.
+                double L = cos(phi)*cos(theta)*sin(B) - cos(A)*cos(theta)*sin(phi) - sin(A)*sin(theta) + cos(B)*(cos(A)*sin(theta) - cos(theta)*sin(A)*sin(phi));
+
+                if (L > 0) {
+                    // test against the z-buffer. Larger 1/z means the pixel is closer
+                    int i_buffer = x_proj + y_proj * screen_width;  // Calculate the buffer index
+                    assert(i_buffer >= 0 && i_buffer < screen_width * screen_height);
+                    if(ooz > zbuffer[i_buffer]) {
+                        zbuffer[i_buffer] = ooz;
+                        int i_luminance = L*8;  // Calculate luminance index ( 0-sqrt(2) -> 0-11[index])
+                        // Output the buffer char at the position 
+                        output_buffer[i_buffer] = LUMINANCE_CHARS[i_luminance];
+                    }
+                }                
             }
         }
 
-        printf("\x1b[H");
-        for (k = 0; k < 1761; k++) {
-            putchar(k % 80 ? b[k] : 10);
+        for (k = 0; k < (screen_height*screen_width+1); k++) {
+            putchar(k % screen_width ? output_buffer[k] : 10);
         }
 
         A += 0.04;  // Increment rotation angle A

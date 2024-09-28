@@ -1,5 +1,7 @@
 {
     "files.associations": {
-        "math.h": "c"
+        "math.h": "c",
+        "stdlib.h": "c",
+        "c_donut_operations.h": "c"
     }
 }
